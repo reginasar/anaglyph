@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from scipy.spatial.distance import sqeuclidean
 
 def twisty(x_, y_, z_, camera_):
     Ve = np.array([x_, y_, z_])    
@@ -14,49 +17,47 @@ def twisty(x_, y_, z_, camera_):
     
 
 class particles:
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
-
-    def view(self, distance, camera=[1, 0, 0], plot_op='hist', save_name='view.jpg'):
-        vx = [1,0,0]
-        vy = [0,1,0]
-        vz = [0,0,1]
-        Ev = np.transpose(np.array([vx,vy,vz]))
-        R3 = np.array([[1,0,0],[0,1,0],[0,0,1]])
-        obs = np.dot(np.dot(Ev, R3), camera) * distance
-        A1 = np.arctan2(obs[1], obs[2])
-        A2 = np.arcsin(obs[0]/distance)
-        R1 = np.array([[1,0,0],[0,np.cos(A1),-np.sin(A1)],[0,np.sin(A1),np.cos(A1)]])
-        R2 = np.array([[np.cos(A2),0,-np.sin(A2)],[0,1,0],[np.sin(A2),0,np.cos(A2)]])
-        R3 = np.array([[np.cos(A2),-np.sin(A2),0],[np.sin(A2),np.cos(A2),0],[0,0,1]])
-        Ve = np.array([self.x, self.y, self.z])
-        Vf = np.dot(np.dot(R2, R1), Ve).T
-
-        if plot_op=='hist':
-            crispy, _,_,_ = stats.binned_statistic_2d(self.x, self.y, \
-                self.x, bins=30, statistic='count')
-            plt.imshow(crispy.T)
-            #plt.savefig(save_name)
-            plt.show()
-        elif plot_op=='point':
-            plt.scatter(self.x, self.y, alpha=0.5)
-            plt.show()
-            #plt.savefig(save_name)
+    def __init__(self, data=None):
+        if data is not None:
+            try:
+                data = np.array(data, dtype=np.float64)
+            except ValueError:
+                "data cannot be converted to ndarray type."
+            
+            if len(data.shape)==2:
+                if data.shape[1]==3:
+                    self.data = data 
+                else:
+                    raise ValueError("second dimension of data must be 3.")
+            else:
+                raise ValueError("data must have two dimensions.")
         else:
-            raise ValueError('wrong plot_op, must be hist or point.')
+            raise ValueError("data must be provided.")
+
+    def view(self, distance, camera=[1, 0, 0], plot_op="hist", save_name="view.jpg"):
+        Vf = twisty(self.data[:, 0], self.data[:, 1], self.data[:, 2], camera)
+        if plot_op=="hist":
+            crispy, _,_,_ = stats.binned_statistic_2d(Vf[:, 0], Vf[:, 1], \
+                Vf[:, 0], bins=30, statistic='count')
+            plt.imshow(crispy.T)
+            plt.savefig(save_name)
+            #plt.show()
+        elif plot_op=="scatter":
+            plt.scatter(Vf[:, 0], Vf[:, 1], alpha=0.5)
+            #plt.show()
+            plt.savefig(save_name)
+        else:
+            raise ValueError('wrong plot_op, must be hist or scatter.')
 
 
-
-    def view_3D(self, camera=[1., 0., 0], distance=60., popout=10., out_size=[40., 25.], save_name='view.jpg'):
-    """
-
-    camera=[1, 0, 0] : unit vector indicating the direction of the camera
-    distance=60. : distance in cm from the viewer to display
-    popout=10. : distance in cm that the image will pop out from the display 
-    out_size=[40., 25.] : display size in cm [x, y]
-    """
+    def view_3D(self, camera=[1., 0., 0.], distance=60., popout=10., out_size=[40., 25.], save_name='view.jpg'):
+        """
+        
+        camera=[1, 0, 0] : unit vector indicating the direction of the camera
+        distance=60. : distance in cm from the viewer to display
+        popout=10. : distance in cm that the image will pop out from the display 
+        out_size=[40., 25.] : display size in cm [x, y]
+        """
         camera = np.array(camera) / np.linalg.norm(camera)
         
         x_rot, y_rot, z_rot= twisty(self.x, self.y, self.z, camera*real_distance)
@@ -94,72 +95,71 @@ class particles:
         plt.show()
         #plt.savefig(save_name)
 
-class video_3D:
-    
-    def __init__(self, data=None, trajectory=None, sitdown_distance=None, popout=None, outsize=None, scale=None):
-        self.fig, self.ax = plt.subplots()
-        self.scatr = self.ax.scatter([], [], c='red', alpha=0.7, s=8)
-        self.scatl = self.ax.scatter([], [], c='cyan', alpha=0.7, s=8)
-        self.ax.set_facecolor('k')
-        
-        if data!=None:
-            self.data = data
-            
-        if trajectory!=None:
-            self.trajectory = trajectory
-        
-        if sitdown_distance==None:
-            sitdown_distance = 150.
-            
-        self.sitdown_distance = sitdown_distance
-        
-        if popout==None:
-            popout = 0.
-            
-        self.popout = popout
-        
-        if outsize==None:
-            outsize = [32., 18.]
-        
-        self.outsize = outsize
-        self.ax.set(xlim=(-outsize[0]/2., outsize[0]/2.), ylim=(-outsize[1]/2., outsize[1]/2.))
-        self.fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
-        
-        if scale==None:
-            scale = 1.
-            
-        self.scale = scale
-        
+    def video_3D(self, trajectory=[0.,0.,0.], sitdown_distance=150.,\
+                 popout=0., outsize=[32., 18.], scale=1., perspective=0.):
+        if not isinstance(sitdown_distance, (int, float)):    
+            raise TypeError("sitdown_distance type must be a scalar.")
+        else:
+            self.sitdown_distance = sitdown_distance
 
+        if not isinstance(popout, (int, float)):    
+            raise TypeError("popout type must be a scalar.")
+        else:
+            self.popout = popout
 
-    def set_data(self, data):
-        self.data = data
-        
-    def set_trajectory(self, trajectory):
-        self.trajectory = trajectory
-        
-    def set_sitdown_distance(self, sitdown_distance):
-        self.sitdown_distance = sitdown_distance
-        
-    def set_popout(self, popout):
-        self.popout = popout
-        
-    def set_outsize(self, outsize):
-        self.outsize = outsize
-        
-    def set_scale(self, scale):
-        self.scale = scale
+        if not isinstance(scale, (int, float)):    
+            raise TypeError("scale type must be a scalar.") 
+        else:
+            self.scale = scale           
+
+        if not isinstance(perspective, (int, float)):    
+            raise TypeError("perspective type must be a scalar.") 
+        else:
+            self.perspective = perspective
+
+        if len(outsize)==2:
+            if not isinstance(outsize[0], (int, float)) or not isinstance(outsize[1], (int, float)):
+                raise TypeError("outsize must be a list or array with two scalars.") 
+        else: 
+            raise TypeError("outsize must be a list or array with two scalars.") 
+
+        try:
+            trajectory = np.array(trajectory, dtype=np.float64)
+        except ValueError:
+            "trajectory cannot be converted to numpy array."
+
+        if len(trajectory.shape)==2 and trajectory.shape[1]==3:
+                self.trajectory = trajectory
+        else:
+            raise ValueError("trajectory must have dimensions [n, 3]")
+
+        fig, ax = plt.subplots()
+        self.scatw = ax.scatter([], [], c='white', alpha=0.7, s=1)
+        self.scatr = ax.scatter([], [], c='red', alpha=0.7, s=1)
+        self.scatl = ax.scatter([], [], c='cyan', alpha=0.7, s=1)
+        ax.set_facecolor('k')
+        ax.set(xlim=(-outsize[0]/2., outsize[0]/2.), ylim=(-outsize[1]/2., outsize[1]/2.))
+        fig.subplots_adjust(left=0, bottom=0, right=1, top=1)
+
+        self.anim = animation.FuncAnimation(fig, self.ani_update, init_func=self.ani_init, frames=self.trajectory.shape[0], interval=50, blit=True)
+        #plt.show()
+        writer = animation.PillowWriter(fps=15,
+                                        metadata=dict(artist='RS'),
+                                        bitrate=1800)
+        self.anim.save('3Danim.gif', writer=writer)        
+
 
     def ani_init(self):
+        self.scatw.set_offsets(np.array([[0],[0]]).T)
         self.scatr.set_offsets(np.array([[0],[0]]).T)
         self.scatl.set_offsets(np.array([[0],[0]]).T)
         return self.scatr, self.scatl,
 
-    def ani_update(self, i):
-        x = self.data[0]
-        y = self.data[1]
-        z = self.data[2]
-        x_vid, y_vid, z_vid = twisty(x, y, z, self.trajectory[i]) 
+    def ani_update(self, ii):
+        x = self.data[:, 0]
+        y = self.data[:, 1]
+        z = self.data[:, 2]
+        x_vid, y_vid, z_vid = twisty(x, y, z, self.trajectory[ii]) 
         
         x_s = x_vid * self.scale # coordinates in cm
         y_s = y_vid * self.scale
@@ -172,21 +172,117 @@ class video_3D:
         xr, yr, zr = twisty(x_s, y_s, z_s, camera_r)
         xl, yl, zl = twisty(x_s, y_s, z_s, camera_l)
         
-        plot_data_r = np.stack([xr, yr]).T
+        pp = self.perspective + self.popout
+        xxr = xr * (pp - zr / pp)
+        yyr = yr * (pp - zr / pp)
+        xxl = xl * (pp - zl / pp)
+        yyl = yl * (pp - zl / pp)
+
+        dist_lr = np.array([sqeuclidean([xxr[jj], yyr[jj]], [xxl[jj], yyl[jj]]) for jj in range(xxr.size)])
+        w_index = np.nonzero(dist_lr<0.5)[0]
+        lr_index = np.nonzero(dist_lr>=0.5)[0]
+
+        plot_data_r = np.stack([xxr[lr_index], yyr[lr_index]]).T
         self.scatr.set_offsets(plot_data_r)
-        plot_data_l = np.stack([xl, yl]).T
+        plot_data_l = np.stack([xxl[lr_index], yyl[lr_index]]).T
         self.scatl.set_offsets(plot_data_l)
-        return self.scatr, self.scatl, 
-
-    def animate(self):
-        self.anim = animation.FuncAnimation(self.fig, self.ani_update, init_func=self.ani_init, frames=self.trajectory.shape[0], interval=50, blit=True)
-        #plt.show()
-        writer = animation.PillowWriter(fps=15,
-                                        metadata=dict(artist='RS'),
-                                        bitrate=1800)
-        self.anim.save('3Danim.gif', writer=writer)
+        plot_data_w = np.stack([xxl[w_index], yyl[w_index]]).T
+        self.scatw.set_offsets(plot_data_w)
+        return self.scatr, self.scatl, self.scatw,
 
 
 
+
+class course:
+    def __init__(self, initial_pos=None):
+        if initial_pos is not None:
+            try:
+                initial_pos = np.array(initial_pos, dtype=np.float64)
+            except TypeError:
+                "data cannot be converted to ndarray type."
+            
+            if len(initial_pos.shape)==1:
+                if initial_pos.size==3:
+                    self.initial_pos = initial_pos 
+                else:
+                    raise ValueError("initial position must be 1D with size 3.")
+            elif all(initial_pos.shape==[1, 3]):
+                self.initial_pos = initial_pos[0, :]
+            else:
+                raise ValueError("initial position must be 1D with size 3.")
+        else:
+            raise ValueError("initial position must be provided.")
+            
+        self.trajectory = np.array([np.copy(initial_pos)])
+
+    def line(self, final_pos, steps=None):
+        try:
+            final_pos = np.array(final_pos, dtype=np.float64)
+        except TypeError:
+            "data cannot be converted to ndarray type."
+            
+        if len(final_pos.shape)==1:
+            if final_pos.size!=3:
+                raise ValueError("final position must be 1D with size 3.")
+        else:
+            raise ValueError("final position must be 1D with size 3.")
+
+        if all(final_pos == self.initial_pos):
+            raise ValueError("Initial and final positions are the same,"+\
+                             "cannot define a line trajectory.")
+            
+        if steps is not None:
+            if not isinstance(steps, int):    
+                raise TypeError("steps type must be int.")
+        else:
+            steps = 30
+            
+        trajectory = (final_pos - self.initial_pos)
+        trajectory = np.repeat([trajectory], steps, axis=0) * np.tile(np.linspace(0, 1, steps), (3, 1)).T
+        trajectory += self.initial_pos
+        self.trajectory = np.concatenate([self.trajectory, trajectory[1:,:]], axis=0)
+        self.initial_pos = np.copy(final_pos)
+            
+
+    def circle(self, final_pos, steps):
+        try:
+            final_pos = np.array(final_pos, dtype=np.float64)
+        except TypeError:
+            "data cannot be converted to ndarray type."
+            
+        if len(final_pos.shape)==1:
+            if final_pos.size!=3:
+                raise ValueError("final position must be 1D with size 3.")
+                
+        if steps is not None:
+            if not isinstance(steps, int):    
+                raise TypeError("steps type must be int.")
+        else:
+            steps = 30
+        
+        if np.dot(self.initial_pos, final_pos)==1.:
+            raise ValueError("Initial and final positions are in the same direction"+\
+                             "and cannot define a plane for a circular trajectory.")
+            
+        theeta = np.arccos(np.clip(np.dot(self.initial_pos/np.linalg.norm(self.initial_pos),\
+                                final_pos/np.linalg.norm(final_pos)), -1.0, 1.0))
+        unit_traj = np.array((np.cos(np.linspace(0, theeta, steps)), \
+                                  np.sin(np.linspace(0, theeta, steps)), np.zeros(steps)))
+            
+        r = np.linalg.norm(self.initial_pos)
+        vf = r * final_pos / np.linalg.norm(final_pos)
+        v090 = -np.dot(self.initial_pos, vf) / r**2 * self.initial_pos + vf
+        v090 = r * v090 / np.linalg.norm(v090)
+        vz = np.cross(self.initial_pos, v090)
+        vz = r * vz / np.linalg.norm(vz)
+        tbase = np.stack((self.initial_pos, v090, vz))
+        cos_incl = np.dot(vz, [0.,0.,1.]) / r
+            
+        trajectory = np.matmul(tbase, unit_traj).T
+        self.trajectory = np.concatenate([self.trajectory, trajectory[1:,:]], axis=0)
+        self.initial_pos = np.copy(final_pos)
+        self.final_pos = None
+    
+    #def helicopter(self):
 
 
