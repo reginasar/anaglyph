@@ -179,15 +179,16 @@ class particles:
         yyl = yl * (pp - zl / pp)
 
         dist_lr = np.array([sqeuclidean([xxr[jj], yyr[jj]], [xxl[jj], yyl[jj]]) for jj in range(xxr.size)])
-        w_index = np.nonzero(dist_lr<0.5)[0]
-        lr_index = np.nonzero(dist_lr>=0.5)[0]
+        w_index = np.nonzero(dist_lr<0.1)[0]
+        lr_index = np.nonzero(dist_lr>=0.1)[0]
 
+        plot_data_w = np.stack([xxl[w_index], yyl[w_index]]).T
+        self.scatw.set_offsets(plot_data_w)
         plot_data_r = np.stack([xxr[lr_index], yyr[lr_index]]).T
         self.scatr.set_offsets(plot_data_r)
         plot_data_l = np.stack([xxl[lr_index], yyl[lr_index]]).T
         self.scatl.set_offsets(plot_data_l)
-        plot_data_w = np.stack([xxl[w_index], yyl[w_index]]).T
-        self.scatw.set_offsets(plot_data_w)
+
         return self.scatr, self.scatl, self.scatw,
 
 
@@ -244,7 +245,7 @@ class course:
         self.initial_pos = np.copy(final_pos)
             
 
-    def circle(self, final_pos, steps):
+    def circle(self, final_pos, steps=None):
         try:
             final_pos = np.array(final_pos, dtype=np.float64)
         except TypeError:
@@ -272,13 +273,12 @@ class course:
         r = np.linalg.norm(self.initial_pos)
         vf = r * final_pos / np.linalg.norm(final_pos)
         v090 = -np.dot(self.initial_pos, vf) / r**2 * self.initial_pos + vf
-        v090 = r * v090 / np.linalg.norm(v090)
+        v090 = v090 / np.linalg.norm(v090)
         vz = np.cross(self.initial_pos, v090)
-        vz = r * vz / np.linalg.norm(vz)
-        tbase = np.stack((self.initial_pos, v090, vz))
-        cos_incl = np.dot(vz, [0.,0.,1.]) / r
+        vz = vz / np.linalg.norm(vz)
+        tbase = np.stack((self.initial_pos/r, v090, vz)).T
             
-        trajectory = np.matmul(tbase, unit_traj).T
+        trajectory = np.matmul(tbase, unit_traj).T * r
         self.trajectory = np.concatenate([self.trajectory, trajectory[1:,:]], axis=0)
         self.initial_pos = np.copy(final_pos)
         self.final_pos = None
