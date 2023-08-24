@@ -6,6 +6,31 @@ import matplotlib.animation as animation
 from scipy.spatial.distance import sqeuclidean
 
 def twisty(x_, y_, z_, camera_):
+    try:
+        x_ = np.array(x_, dtype=np.float64)
+        y_ = np.array(y_, dtype=np.float64)
+        z_ = np.array(z_, dtype=np.float64)
+    except TypeError:
+        "data cannot be converted to ndarray type."
+
+    if x_.shape!=y_.shape or y_.shape!=z_.shape:
+        raise ValueError("data dimesions must be the same, but found: ", x_.shape, y_.shape, z_.shape)
+    elif x_.shape[0]!=x_.size:
+        raise ValueError("data must have one dimesion, but found shape: ", x_.shape)
+
+
+    if camera_ is not None:
+        try:
+            camera_ = np.array(camera_, dtype=np.float64)
+        except TypeError:
+            "camera cannot be converted to ndarray type."
+            
+    if len(camera_.shape)==1:
+        if camera_.size!=3:
+            raise ValueError("Camera size must be 3. Current size is: ", camera_.size)
+    else:
+        raise ValueError("Camera shape must be [3]. Current shape is: ", camera_.shape)
+
     Ve = np.array([x_, y_, z_])    
     A1 = np.arctan2(camera_[1], camera_[2])
     A2 = np.arcsin(camera_[0]/np.linalg.norm(camera_))
@@ -95,7 +120,7 @@ class particles:
         plt.show()
         #plt.savefig(save_name)
 
-    def video_3D(self, trajectory=[0.,0.,0.], sitdown_distance=150.,\
+    def video_3D(self, trajectory=[[0.,0.,0.]], sitdown_distance=150.,\
                  popout=0., outsize=[32., 18.], scale=1., perspective=0.):
         if not isinstance(sitdown_distance, (int, float)):    
             raise TypeError("sitdown_distance type must be a scalar.")
@@ -163,7 +188,7 @@ class particles:
         
         x_s = x_vid * self.scale # coordinates in cm
         y_s = y_vid * self.scale
-        z_s = z_vid * self.scale - self.popout
+        z_s = z_vid * self.scale + self.popout
                 
         eye_sep = 4. #half separation between eyes [cm]
         camera_r = self.sitdown_distance * np.array([0, 0, 1]) + eye_sep * np.array([1, 0, 0])
@@ -172,11 +197,16 @@ class particles:
         xr, yr, zr = twisty(x_s, y_s, z_s, camera_r)
         xl, yl, zl = twisty(x_s, y_s, z_s, camera_l)
         
-        pp = self.perspective + self.popout
-        xxr = xr * (pp - zr / pp)
-        yyr = yr * (pp - zr / pp)
-        xxl = xl * (pp - zl / pp)
-        yyl = yl * (pp - zl / pp)
+        if self.perspective + self.popout!=0.:
+            xxr = xr * (self.perspective + zr) / (self.perspective + self.popout)
+            yyr = yr * (self.perspective + zr) / (self.perspective + self.popout)
+            xxl = xl * (self.perspective + zl) / (self.perspective + self.popout)
+            yyl = yl * (self.perspective + zl) / (self.perspective + self.popout)
+        else:
+            xxr = xr
+            yyr = yr
+            xxl = xl
+            yyl = yl
 
         dist_lr = np.array([sqeuclidean([xxr[jj], yyr[jj]], [xxl[jj], yyl[jj]]) for jj in range(xxr.size)])
         w_index = np.nonzero(dist_lr<0.1)[0]
@@ -216,7 +246,7 @@ class course:
             
         self.trajectory = np.array([np.copy(initial_pos)])
 
-    def line(self, final_pos, steps=None):
+    def line(self, final_pos, steps):
         try:
             final_pos = np.array(final_pos, dtype=np.float64)
         except TypeError:
@@ -228,15 +258,14 @@ class course:
         else:
             raise ValueError("final position must be 1D with size 3.")
 
-        if all(final_pos == self.initial_pos):
+        if all(final_pos==self.initial_pos):
             raise ValueError("Initial and final positions are the same,"+\
                              "cannot define a line trajectory.")
             
-        if steps is not None:
-            if not isinstance(steps, int):    
-                raise TypeError("steps type must be int.")
+        if not isinstance(steps, (int, float)):    
+            raise TypeError("steps type must be int.")
         else:
-            steps = 30
+            steps = np.int32(steps)
             
         trajectory = (final_pos - self.initial_pos)
         trajectory = np.repeat([trajectory], steps, axis=0) * np.tile(np.linspace(0, 1, steps), (3, 1)).T
@@ -245,7 +274,7 @@ class course:
         self.initial_pos = np.copy(final_pos)
             
 
-    def circle(self, final_pos, steps=None):
+    def circle(self, final_pos, steps):
         try:
             final_pos = np.array(final_pos, dtype=np.float64)
         except TypeError:
@@ -255,11 +284,10 @@ class course:
             if final_pos.size!=3:
                 raise ValueError("final position must be 1D with size 3.")
                 
-        if steps is not None:
-            if not isinstance(steps, int):    
-                raise TypeError("steps type must be int.")
+        if not isinstance(steps, (int, float)):    
+            raise TypeError("steps type must be int.")
         else:
-            steps = 30
+            steps = np.int32(steps)
         
         if np.dot(self.initial_pos, final_pos)==1.:
             raise ValueError("Initial and final positions are in the same direction"+\
@@ -280,9 +308,72 @@ class course:
             
         trajectory = np.matmul(tbase, unit_traj).T * r
         self.trajectory = np.concatenate([self.trajectory, trajectory[1:,:]], axis=0)
-        self.initial_pos = np.copy(final_pos)
+        self.initial_pos = np.copy(self.trajectory[-1, :])
         self.final_pos = None
     
-    #def helicopter(self):
+    def helicopter(self, final_pos, steps, angle=None):
+        try:
+            final_pos = np.array(final_pos, dtype=np.float64)
+        except TypeError:
+            "data cannot be converted to ndarray type."
+            
+        if len(final_pos.shape)==1:
+            if final_pos.size!=3:
+                raise ValueError("final position must be 1D with size 3.")
+                
+        if not isinstance(steps, (int, float)):    
+            raise TypeError("steps type must be int.")
+        else:
+            steps = np.int32(steps)
+
+        if angle is not None:
+            if isinstance(angle, (float, int)):    
+                raise TypeError("angle type must be int.")
+        else:
+            angle = np.pi
+
+
+        
+        if np.dot(self.initial_pos, final_pos)==1.:
+            raise ValueError("Initial and final positions are in the same direction,"+\
+                             "cannot define a plane for a circular trajectory.") 
+
+        u_normal = (self.initial_pos + final_pos) / 2.
+        u_normal /= np.linalg.norm(u_normal) 
+        v_centre = u_normal * (np.dot(self.initial_pos, u_normal))
+        ux = self.initial_pos - v_centre
+        uy = np.cross(u_normal, self.initial_pos)
+        uy = np.linalg.norm(ux) * uy /np.linalg.norm(uy)
+
+
+        unit_traj = np.array((np.cos(np.linspace(0, angle, steps)), \
+                              np.sin(np.linspace(0, angle, steps)), np.zeros(steps)))
+
+        trajectory = np.tile(v_centre, (steps,1)) + \
+                     np.tile(np.cos(np.linspace(0, angle, steps)), (3, 1)).T * np.tile(ux, (steps,1)) + \
+                     np.tile(np.sin(np.linspace(0, angle, steps)), (3, 1)).T * np.tile(uy, (steps,1))
+        self.trajectory = np.concatenate([self.trajectory, trajectory[1:,:]], axis=0)
+        self.initial_pos = np.copy(self.trajectory[-1, :])
+        self.final_pos = None
+
+
+    def check_loop(self):
+        all_fine = True
+        initial = np.zeros((3, 3))
+        final = np.zeros((3, 3))
+        initial[0], initial[1], initial[2] = twisty([1,0,0], [0,1,0], [0,0,1], self.trajectory[0, :])
+        final[0], final[1], final[2] = twisty([1,0,0], [0,1,0], [0,0,1], self.trajectory[-1, :])
+
+        if np.allclose(self.trajectory[0, :], self.trajectory[-1, :]):
+            print("Trajectory is a closed loop.")
+            if all(np.reshape(initial*final, -1) > 0.): 
+                print("Loop is OK.")
+            else:
+                print("Loop shifts angle.")            
+        else:
+            print("Trajectory is an open loop.")
+
+
+
 
 
